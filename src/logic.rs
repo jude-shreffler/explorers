@@ -10,13 +10,14 @@ use rand::Rng;
 pub struct Explorers {
     map: Map,
     round: usize,
+    turn: usize,
     player: usize,
     players: [Player; 4],
 }
 
 impl Explorers {
     pub fn new() -> Explorers {
-        let ret: Explorers = Explorers {map: Map::new(), round: 0, player: 0, players: [Player::new(), Player::new(), Player::new(), Player::new()] };
+        let ret: Explorers = Explorers {map: Map::new(), round: 0, turn: 0, player: 0, players: [Player::new(), Player::new(), Player::new(), Player::new()] };
         ret
     }
 
@@ -34,9 +35,9 @@ impl Explorers {
     
             self.run_logic(app_state);
 
-            let mut pencil = Pencil::new(window.canvas_mut());
+            let pencil = Pencil::new(window.canvas_mut());
 
-            self.draw_board(pencil, 0);
+            self.draw_board(pencil);
         });
     }
 
@@ -55,7 +56,7 @@ impl Explorers {
         }
     }
 
-    fn draw_board(&mut self, mut pencil: Pencil, player: i32) {
+    fn draw_board(&mut self, mut pencil: Pencil) {
         for i in 0..4 {
             for j in 0..8 {
                 for k in 0..8 {
@@ -78,7 +79,7 @@ impl Explorers {
                     pencil.set_foreground(f_color);
 
                     let position = Vec2::xy(2*j + match i {0 => 0, 1 => 16, 2 => 0, 3 => 16, _ => panic!("how")}, 2*k + match i {0 => 0, 1 => 0, 2 => 16, 3 => 16, _ => panic!("how")});
-                    let value = match self.map.quads[i].item_spaces[j][k] {
+                    let item = match self.map.quads[i].item_spaces[j][k] {
                         Item::Apple => 'a',
                         Item::Carrot => 'c',
                         Item::Fish => 'f',
@@ -97,10 +98,16 @@ impl Explorers {
                             }
                         },
                     };
-                    pencil.draw_char(value, position);
-                    pencil.draw_char(value, position + Vec2::xy(0,1));
-                    pencil.draw_char(value, position + Vec2::xy(1,0));
-                    pencil.draw_char(value, position + Vec2::xy(1,1));
+
+                    let explored = match self.map.quads[i].explored_spaces[j][k][self.player] {
+                        true => 'X',
+                        false => item,
+                    };
+
+                    pencil.draw_char(item, position);
+                    pencil.draw_char(explored, position + Vec2::xy(0,1));
+                    pencil.draw_char(explored, position + Vec2::xy(1,0));
+                    pencil.draw_char(item, position + Vec2::xy(1,1));
                 }
             }
         }
@@ -110,7 +117,6 @@ impl Explorers {
         pencil.draw_char('\\', self.players[self.player].cursor_position);
         pencil.draw_char('/', self.players[self.player].cursor_position + Vec2::xy(0,1));
         pencil.draw_char('/', self.players[self.player].cursor_position + Vec2::xy(1,0));
-
         pencil.draw_char('\\', self.players[self.player].cursor_position + Vec2::xy(1,1));
         
     }
@@ -118,6 +124,40 @@ impl Explorers {
 
 pub struct Map {
     pub quads: [MapQuad; 4],
+}
+
+impl Map {
+    pub fn new() -> Map {
+        let mut quads = generate_map_quads();
+        let positions: [Vec2; 4] = [Vec2::xy(8,8) - quads[0].get_village_pos().unwrap(),
+                                    Vec2::xy(0,8) - quads[1].get_village_pos().unwrap(),
+                                    Vec2::xy(8,0) - quads[2].get_village_pos().unwrap(),
+                                    Vec2::xy(0,0) - quads[2].get_village_pos().unwrap()];
+        let mut distances: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
+
+        for i in 0..4 {
+            let x = positions[i].x;
+            let y = positions[i].y;
+            distances[i] = f32::sqrt((x*x + y*y) as f32);
+        }
+
+        let mut nearest_village = 0;
+        let mut to_nearest_village = distances[0];
+        for i in 1..4 {
+            if distances[i] < to_nearest_village {
+                nearest_village = i;
+                to_nearest_village = distances[i];
+            }
+        }
+
+        for player in 0..4 {
+            let x = quads[nearest_village].get_village_pos().unwrap().x as usize;
+            let y = quads[nearest_village].get_village_pos().unwrap().y as usize;
+            quads[nearest_village].explored_spaces[x][y][player] = true;
+        }
+
+        Map {quads: [quads[0], quads[1], quads[2], quads[3]]}
+    }
 }
 
 pub struct Player {
@@ -156,18 +196,26 @@ pub enum Item {
 pub const DARK_BROWN: u8 = 94;
 pub const LIGHT_BROWN: u8 = 166;
 
-impl Map {
-    pub fn new() -> Map {
-        let quads = generate_map_quads();
-        Map {quads: [quads[0], quads[1], quads[2], quads[3]]}
-    }
-}
-
 #[derive(Clone, Copy)]
 pub struct MapQuad { /// one quad of the whole map
     pub terrain_spaces: [[Terrain; 8]; 8], // the 8x8 grid of Terrain denoting whether a tile is Prarie, Water, Desert, or Mountain
     pub item_spaces: [[Item; 8]; 8], /// same thing but with the Item enum
     pub explored_spaces: [[[bool; 4]; 8]; 8], // same grid, but each cell contains a vector denoting whether player 0..n has walked on that cell
+}
+
+impl MapQuad {
+    fn get_village_pos(& self) -> Option<Vec2> {
+        for i in 0..8 {
+            for j in 0..8 {
+                match self.terrain_spaces[i][j] { 
+                    Terrain::Village => return Some(Vec2::xy(i, j)), 
+                    _ => (),
+                }
+            }
+        }
+
+        None
+    }
 }
 
 fn generate_map_quads() -> [MapQuad; 4] { // generates 4 quads {a, b, c, d}
@@ -183,7 +231,6 @@ fn generate_map_quads() -> [MapQuad; 4] { // generates 4 quads {a, b, c, d}
     // split each at whitespace for a vector of 8 char long strings
     let terrain_vector = terrain_string.split_whitespace().collect::<Vec<&str>>();
     let item_vector = item_string.split_whitespace().collect::<Vec<&str>>();
-
 
     // check each character using the line and char number to store them into terrain_pool and item_pool
     for current_line in 0..256 {
@@ -337,10 +384,10 @@ fn generate_map_quads() -> [MapQuad; 4] { // generates 4 quads {a, b, c, d}
             final_explored[i][j] = [false, false, false, false];
         }
     } 
+
     let final_quads = [MapQuad {terrain_spaces: final_terrain[0], item_spaces: final_items[0], explored_spaces: final_explored},
         MapQuad {terrain_spaces: final_terrain[1], item_spaces: final_items[1], explored_spaces: final_explored},
         MapQuad {terrain_spaces: final_terrain[2], item_spaces: final_items[2], explored_spaces: final_explored},
         MapQuad {terrain_spaces: final_terrain[3], item_spaces: final_items[3], explored_spaces: final_explored}];
-
     final_quads
 }
