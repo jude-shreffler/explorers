@@ -1,18 +1,61 @@
-use ruscii::{drawing::Pencil, terminal::Color, spatial::Vec2};
+use ruscii::app::{App, State};
+use ruscii::terminal::{Window};
+use ruscii::drawing::{Pencil};
+use ruscii::keyboard::{KeyEvent, Key};
+use ruscii::spatial::{Vec2};
+use ruscii::terminal::{Color};
 use std::fs;
 use rand::Rng;
 
 pub struct Explorers {
-    pub map: Map,
+    map: Map,
+    round: usize,
+    player: usize,
+    players: [Player; 4],
 }
 
 impl Explorers {
     pub fn new() -> Explorers {
-        let ret: Explorers = Explorers {map: Map::new()};
+        let ret: Explorers = Explorers {map: Map::new(), round: 0, player: 0, players: [Player::new(), Player::new(), Player::new(), Player::new()] };
         ret
     }
 
-    pub fn draw_board(&mut self, mut pencil: Pencil) {
+    pub fn start_game(&mut self) {
+        let mut ruscii = App::new();
+        
+        ruscii.run(|app_state: &mut State, window: &mut Window| {
+            for key_event in app_state.keyboard().last_key_events() {
+                match key_event {
+                    KeyEvent::Pressed(Key::Esc) => app_state.stop(),
+                    KeyEvent::Pressed(Key::Q) => app_state.stop(),
+                    _ => (),
+                }
+            }
+    
+            self.run_logic(app_state);
+
+            let mut pencil = Pencil::new(window.canvas_mut());
+
+            self.draw_board(pencil, 0);
+        });
+    }
+
+    fn run_logic(&mut self, app_state: &mut State) {
+        for key_event in app_state.keyboard().last_key_events() {
+            match key_event {
+                KeyEvent::Pressed(Key::Esc) => app_state.stop(),
+                KeyEvent::Pressed(Key::Q) => app_state.stop(),
+                KeyEvent::Pressed(Key::Left) => self.players[self.player].cursor_position.x -= 2,
+                KeyEvent::Pressed(Key::Right) => self.players[self.player].cursor_position.x += 2,
+                KeyEvent::Pressed(Key::Up) => self.players[self.player].cursor_position.y -= 2,
+                KeyEvent::Pressed(Key::Down) => self.players[self.player].cursor_position.y += 2,
+
+                _ => (),
+            }
+        }
+    }
+
+    fn draw_board(&mut self, mut pencil: Pencil, player: i32) {
         for i in 0..4 {
             for j in 0..8 {
                 for k in 0..8 {
@@ -61,6 +104,15 @@ impl Explorers {
                 }
             }
         }
+
+        pencil.set_background(Color::White);
+        pencil.set_foreground(Color::Red);
+        pencil.draw_char('\\', self.players[self.player].cursor_position);
+        pencil.draw_char('/', self.players[self.player].cursor_position + Vec2::xy(0,1));
+        pencil.draw_char('/', self.players[self.player].cursor_position + Vec2::xy(1,0));
+
+        pencil.draw_char('\\', self.players[self.player].cursor_position + Vec2::xy(1,1));
+        
     }
 }
 
@@ -69,7 +121,13 @@ pub struct Map {
 }
 
 pub struct Player {
-    
+    pub cursor_position: Vec2,
+}
+
+impl Player {
+    pub fn new() -> Player{
+        Player { cursor_position: Vec2::xy(0, 0) }
+    }
 }
 
 #[derive(Clone, Copy, Default)]
